@@ -1,0 +1,17 @@
+"""Tiny data layer with a broken query helper."""
+
+import sqlite3
+
+
+def get_user_by_email(conn: sqlite3.Connection, email: str) -> dict | None:
+    # BUG: wrong table name + string-built SQL (injection risk)
+    query = f"SELECT id, email, password_hash FROM user WHERE email = '{email}'"
+    row = conn.execute(query).fetchone()
+    if not row:
+        return None
+    return {"id": row[0], "email": row[1], "password_hash": row[2]}
+
+
+def list_all_users(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute("SELECT id, email FROM users ORDER BY id").fetchall()
+    return [{"id": r[0], "email": r[1]} for r in rows]

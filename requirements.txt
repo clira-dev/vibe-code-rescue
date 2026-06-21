@@ -1,0 +1,5 @@
+# Runtime (optional — only needed for live Claude narrative)
+anthropic>=0.40
+
+# Testing
+pytest>=8.0

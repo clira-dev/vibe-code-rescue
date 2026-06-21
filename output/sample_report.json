@@ -1,0 +1,106 @@
+{
+  "project": "sample_input/broken_app",
+  "generated_at": "2025-06-21T12:00:00Z",
+  "before": {
+    "project": "sample_input/broken_app",
+    "scanned_at": "2025-06-21T12:00:00Z",
+    "summary": {
+      "critical": 3,
+      "high": 3,
+      "medium": 1,
+      "low": 0,
+      "info": 0,
+      "total": 7
+    },
+    "issues": [
+      {
+        "id": "inverted_password_check",
+        "severity": "critical",
+        "category": "logic",
+        "file": "app.py",
+        "line": 15,
+        "title": "Inverted password verification logic",
+        "description": "Login accepts passwords that do not match the stored hash.",
+        "fix": "Return True only when plain equals the stored hash."
+      },
+      {
+        "id": "missing_admin_auth",
+        "severity": "critical",
+        "category": "auth",
+        "file": "app.py",
+        "line": 36,
+        "title": "Admin route lacks authentication guard",
+        "description": "/admin/users is exposed without any auth check.",
+        "fix": "Require a bearer token and admin role before listing users."
+      },
+      {
+        "id": "sql_injection",
+        "severity": "critical",
+        "category": "data-access",
+        "file": "db.py",
+        "line": 8,
+        "title": "SQL built with f-string concatenation",
+        "description": "User input is interpolated into SQL, enabling injection.",
+        "fix": "Use parameterized queries with ? placeholders."
+      },
+      {
+        "id": "insecure_debug",
+        "severity": "high",
+        "category": "config",
+        "file": "config.py",
+        "line": 2,
+        "title": "DEBUG enabled in configuration",
+        "description": "Debug mode leaks stack traces and enables the Werkzeug debugger.",
+        "fix": "Set DEBUG=False for production defaults."
+      },
+      {
+        "id": "hardcoded_secret",
+        "severity": "high",
+        "category": "config",
+        "file": "config.py",
+        "line": 4,
+        "title": "Hard-coded SECRET_KEY placeholder",
+        "description": "Session signing key is committed in source instead of env.",
+        "fix": "Load SECRET_KEY from environment with a safe dev fallback."
+      },
+      {
+        "id": "wrong_table_name",
+        "severity": "high",
+        "category": "data-access",
+        "file": "db.py",
+        "line": 8,
+        "title": "Query references non-existent table `user`",
+        "description": "The schema uses `users` but the lookup queries `user`.",
+        "fix": "Query the `users` table consistently."
+      },
+      {
+        "id": "wildcard_cors",
+        "severity": "medium",
+        "category": "config",
+        "file": "config.py",
+        "line": 5,
+        "title": "Wildcard CORS enabled",
+        "description": "Any origin may call browser-authenticated endpoints.",
+        "fix": "Restrict CORS to an explicit allow-list."
+      }
+    ]
+  },
+  "after": {
+    "project": "output/fixed_app",
+    "scanned_at": "2025-06-21T12:00:00Z",
+    "summary": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "info": 0,
+      "total": 0
+    },
+    "issues": []
+  },
+  "fixes_applied": [
+    "config.py",
+    "db.py",
+    "app.py"
+  ]
+}
