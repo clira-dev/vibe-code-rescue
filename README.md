@@ -1,6 +1,8 @@
+![CI](https://github.com/clira-dev/vibe-code-rescue/actions/workflows/ci.yml/badge.svg)
+
 # Vibe Code Rescue
 
-**Ship your broken AI-generated app, secured.** It finds the seven dangerous bugs
+**Ship your broken AI-generated app, secured** — 24 tests; AST-based fixer that patches arbitrary AI-generated code and rebuilds auth securely (hashed + constant-time). It finds the seven dangerous bugs
 AI assistants reliably emit and applies **surgical, line-level fixes** to *your*
 source — turning a plaintext password check into a salted, constant-time hash, an
 f-string SQL query into a parameterized one, and an unguarded admin route into an
@@ -16,6 +18,32 @@ per-fix rationale you can drop straight into a PR.
 
 It is not a linter that only complains, and it is not a template stamper that
 overwrites your files with someone else's app. It edits *your* code.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    CLI["CLI: project path"] --> Scan["_iter_py_files"]
+    Scan --> Read["Read .py source"]
+    Read --> Detect["Detectors (AST + regex)"]
+    Detect --> Issues["Issue list"]
+    Issues --> Fix["Surgical fixers"]
+    Fix --> Patch["Patched source"]
+    Patch --> ReScan["Re-diagnose in memory"]
+    ReScan --> Report["RescueReport JSON"]
+    Patch --> Diff["Unified diff"]
+    Patch --> FixedDir["--fixed-dir tree"]
+    Report --> Narrative{"--narrative?"}
+    Narrative -->|ANTHROPIC_API_KEY| LLM["AnthropicClient"]
+    Narrative -->|offline| Stub["StubClient"]
+    LLM --> Summary["Executive summary"]
+    Stub --> Summary
+    Fix --> Auth["Secure auth helpers"]
+    Auth --> Hash["hash_password (bcrypt / pbkdf2)"]
+    Auth --> Verify["verify_password + hmac.compare_digest"]
+```
 
 ---
 

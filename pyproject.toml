@@ -1,0 +1,12 @@
+[project]
+name = "vibe-code-rescue"
+version = "0.1.0"
+description = "Detect and surgically fix security bugs in AI-generated Python apps"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40",
+    "pytest>=8.0",
+]
+
+[tool.ruff]
+line-length = 100
