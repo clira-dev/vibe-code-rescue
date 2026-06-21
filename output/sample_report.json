@@ -1,9 +1,9 @@
 {
-  "project": "sample_input/broken_app",
-  "generated_at": "2025-06-21T12:00:00Z",
+  "project": "/Users/p/clira-site/samples/vibe-code-rescue/sample_input/broken_app",
+  "generated_at": "2026-06-21T15:09:47Z",
   "before": {
-    "project": "sample_input/broken_app",
-    "scanned_at": "2025-06-21T12:00:00Z",
+    "project": "/Users/p/clira-site/samples/vibe-code-rescue/sample_input/broken_app",
+    "scanned_at": "2026-06-21T15:09:47Z",
     "summary": {
       "critical": 3,
       "high": 3,
@@ -14,24 +14,24 @@
     },
     "issues": [
       {
-        "id": "inverted_password_check",
-        "severity": "critical",
-        "category": "logic",
-        "file": "app.py",
-        "line": 15,
-        "title": "Inverted password verification logic",
-        "description": "Login accepts passwords that do not match the stored hash.",
-        "fix": "Return True only when plain equals the stored hash."
-      },
-      {
-        "id": "missing_admin_auth",
+        "id": "plaintext_password_compare",
         "severity": "critical",
         "category": "auth",
         "file": "app.py",
-        "line": 36,
-        "title": "Admin route lacks authentication guard",
-        "description": "/admin/users is exposed without any auth check.",
-        "fix": "Require a bearer token and admin role before listing users."
+        "line": 15,
+        "title": "Plaintext password comparison",
+        "description": "The password is compared directly to the stored value instead of being hashed and checked in constant time — leaks via timing and means stored secrets are plaintext.",
+        "fix": "Hash the password (bcrypt or pbkdf2_hmac) and compare with hmac.compare_digest."
+      },
+      {
+        "id": "missing_route_auth",
+        "severity": "critical",
+        "category": "auth",
+        "file": "app.py",
+        "line": 37,
+        "title": "Sensitive route `/admin/users` lacks an auth guard",
+        "description": "The handler for `/admin/users` is exposed without any authentication or authorization check.",
+        "fix": "Require an authenticated admin (bearer token) before serving."
       },
       {
         "id": "sql_injection",
@@ -39,9 +39,9 @@
         "category": "data-access",
         "file": "db.py",
         "line": 8,
-        "title": "SQL built with f-string concatenation",
-        "description": "User input is interpolated into SQL, enabling injection.",
-        "fix": "Use parameterized queries with ? placeholders."
+        "title": "SQL built by string interpolation",
+        "description": "User-controlled input is interpolated into a SQL string, enabling SQL injection.",
+        "fix": "Use a parameterized query with ? placeholders."
       },
       {
         "id": "insecure_debug",
@@ -50,8 +50,8 @@
         "file": "config.py",
         "line": 2,
         "title": "DEBUG enabled in configuration",
-        "description": "Debug mode leaks stack traces and enables the Werkzeug debugger.",
-        "fix": "Set DEBUG=False for production defaults."
+        "description": "Debug mode leaks stack traces and enables an interactive debugger that can execute arbitrary code.",
+        "fix": "Drive DEBUG from the environment, defaulting to False."
       },
       {
         "id": "hardcoded_secret",
@@ -59,9 +59,9 @@
         "category": "config",
         "file": "config.py",
         "line": 4,
-        "title": "Hard-coded SECRET_KEY placeholder",
-        "description": "Session signing key is committed in source instead of env.",
-        "fix": "Load SECRET_KEY from environment with a safe dev fallback."
+        "title": "Hard-coded secret in source",
+        "description": "A signing key / credential is committed as a string literal instead of being loaded from the environment.",
+        "fix": "Load the value from os.environ with a safe dev fallback."
       },
       {
         "id": "wrong_table_name",
@@ -69,9 +69,9 @@
         "category": "data-access",
         "file": "db.py",
         "line": 8,
-        "title": "Query references non-existent table `user`",
-        "description": "The schema uses `users` but the lookup queries `user`.",
-        "fix": "Query the `users` table consistently."
+        "title": "Query references singular `user` table",
+        "description": "The query selects FROM `user` while the schema defines `users` — the lookup silently fails.",
+        "fix": "Reference the `users` table consistently."
       },
       {
         "id": "wildcard_cors",
@@ -81,13 +81,13 @@
         "line": 5,
         "title": "Wildcard CORS enabled",
         "description": "Any origin may call browser-authenticated endpoints.",
-        "fix": "Restrict CORS to an explicit allow-list."
+        "fix": "Restrict CORS to an explicit allow-list from the environment."
       }
     ]
   },
   "after": {
-    "project": "output/fixed_app",
-    "scanned_at": "2025-06-21T12:00:00Z",
+    "project": "/Users/p/clira-site/samples/vibe-code-rescue/sample_input/broken_app",
+    "scanned_at": "2026-06-21T15:09:47Z",
     "summary": {
       "critical": 0,
       "high": 0,
@@ -99,8 +99,47 @@
     "issues": []
   },
   "fixes_applied": [
-    "config.py",
-    "db.py",
-    "app.py"
+    {
+      "file": "app.py",
+      "fix_id": "plaintext_password_compare",
+      "rationale": "Replaced plaintext `verify_password` with hash_password/verify_password using bcrypt (or stdlib pbkdf2_hmac) and hmac.compare_digest for constant-time checks. Passwords are never compared as plaintext.",
+      "diff": "--- a/app.py\n+++ b/app.py\n@@ -10,10 +10,65 @@\n app.config[\"DEBUG\"] = DEBUG\n \n \n+import hashlib\n+import hmac\n+import os\n+\n+try:  # Prefer bcrypt when available; fall back to stdlib pbkdf2_hmac.\n+    import bcrypt as _bcrypt  # type: ignore\n+except Exception:  # pragma: no cover - exercised only when bcrypt installed\n+    _bcrypt = None\n+\n+_PBKDF2_ALGO = \"sha256\"\n+_PBKDF2_ROUNDS = 240_000\n+\n+\n+def hash_password(plain: str) -> str:\n+    \"\"\"Return a salted, slow password hash safe to store at rest.\"\"\"\n+    if _bcrypt is not None:\n+        return _bcrypt.hashpw(plain.encode(\"utf-8\"), _bcrypt.gensalt()).decode(\"utf-8\")\n+    salt = os.urandom(16)\n+    digest = hashlib.pbkdf2_hmac(_PBKDF2_ALGO, plain.encode(\"utf-8\"), salt, _PBKDF2_ROUNDS)\n+    return f\"pbkdf2_{_PBKDF2_ALGO}${_PBKDF2_ROUNDS}${salt.hex()}${digest.hex()}\"\n+\n+\n def verify_password(plain: str, stored_hash: str) -> bool:\n-    # BUG: inverted comparison — accepts wrong passwords\n-    return plain != stored_hash\n+    \"\"\"Constant-time verification of a password against a stored hash.\"\"\"\n+    if stored_hash.startswith(\"pbkdf2_\"):\n+        try:\n+            prefix, rounds_s, salt_hex, digest_hex = stored_hash.split(\"$\", 3)\n+            algo = prefix.split(\"_\", 1)[1]  # e.g. \"pbkdf2_sha256\" -> \"sha256\"\n+            rounds = int(rounds_s)\n+            salt = bytes.fromhex(salt_hex)\n+            expected = bytes.fromhex(digest_hex)\n+        except (ValueError, IndexError):\n+            return False\n+        candidate = hashlib.pbkdf2_hmac(algo, plain.encode(\"utf-8\"), salt, rounds)\n+        return hmac.compare_digest(candidate, expected)\n+    if _bcrypt is not None:\n+        try:\n+            return _bcrypt.checkpw(plain.encode(\"utf-8\"), stored_hash.encode(\"utf-8\"))\n+        except (ValueError, TypeError):\n+            return False\n+    # Unknown/legacy format: refuse rather than fall back to plaintext.\n+    return False\n \n+\n+\n+ADMIN_TOKEN = os.environ.get(\"ADMIN_TOKEN\", \"DEMO-PLACEHOLDER-admin-token\")\n+\n+\n+def require_admin() -> bool:\n+    \"\"\"Return True only for a valid admin bearer token (constant-time check).\"\"\"\n+    import hmac\n+\n+    from flask import request\n+\n+    auth = request.headers.get(\"Authorization\", \"\")\n+    if not auth.startswith(\"Bearer \"):\n+        return False\n+    token = auth[len(\"Bearer \"):].strip()\n+    return hmac.compare_digest(token, ADMIN_TOKEN)\n \n @app.route(\"/health\")\n def health():\n@@ -36,6 +91,8 @@\n @app.route(\"/admin/users\")\n def admin_users():\n     # BUG: no authentication or authorization check\n+    if not require_admin():\n+        return jsonify({\"error\": \"unauthorized\"}), 401\n     users = list_all_users(app.db)  # type: ignore[attr-defined]\n     return jsonify(users)\n \n"
+    },
+    {
+      "file": "app.py",
+      "fix_id": "missing_route_auth",
+      "rationale": "Added a require_admin() bearer-token guard at the top of each sensitive route; unauthenticated callers receive 401.",
+      "diff": ""
+    },
+    {
+      "file": "config.py",
+      "fix_id": "wildcard_cors",
+      "rationale": "Wildcard CORS replaced by an explicit, env-driven allow-list (ALLOWED_ORIGINS).",
+      "diff": "--- a/config.py\n+++ b/config.py\n@@ -1,7 +1,7 @@\n \"\"\"Vibe-coded settings — intentionally insecure for the rescue demo.\"\"\"\n-\n-DEBUG = True\n-SECRET_KEY = \"DEMO-PLACEHOLDER-insecure-secret\"\n-ALLOW_ALL_ORIGINS = True\n+import os\n+DEBUG = os.environ.get(\"APP_DEBUG\", \"false\").lower() == \"true\"\n+SECRET_KEY = os.environ.get(\"SECRET_KEY\", \"DEMO-PLACEHOLDER-dev-only\")\n+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(\"ALLOWED_ORIGINS\", \"http://localhost:3000\").split(\",\") if o.strip()]\n DATABASE_URL = \"sqlite:///./app.db\"\n SESSION_COOKIE_SECURE = False\n"
+    },
+    {
+      "file": "config.py",
+      "fix_id": "insecure_debug",
+      "rationale": "DEBUG is now read from the APP_DEBUG environment variable (default False); server start uses debug=DEBUG instead of a literal True.",
+      "diff": ""
+    },
+    {
+      "file": "config.py",
+      "fix_id": "hardcoded_secret",
+      "rationale": "Hard-coded secret(s) now load from os.environ with a non-secret DEMO-PLACEHOLDER dev fallback.",
+      "diff": ""
+    },
+    {
+      "file": "db.py",
+      "fix_id": "wrong_table_name",
+      "rationale": "Corrected the table name from `user` to `users`.",
+      "diff": "--- a/db.py\n+++ b/db.py\n@@ -5,8 +5,8 @@\n \n def get_user_by_email(conn: sqlite3.Connection, email: str) -> dict | None:\n     # BUG: wrong table name + string-built SQL (injection risk)\n-    query = f\"SELECT id, email, password_hash FROM user WHERE email = '{email}'\"\n-    row = conn.execute(query).fetchone()\n+    query = \"SELECT id, email, password_hash FROM users WHERE email = ?\"\n+    row = conn.execute(query, (email,)).fetchone()\n     if not row:\n         return None\n     return {\"id\": row[0], \"email\": row[1], \"password_hash\": row[2]}\n"
+    },
+    {
+      "file": "db.py",
+      "fix_id": "sql_injection",
+      "rationale": "SQL is now a parameterized query with a ? placeholder; the value is passed as a bound parameter instead of interpolated, closing the injection.",
+      "diff": ""
+    }
   ]
 }

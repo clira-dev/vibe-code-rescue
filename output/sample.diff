@@ -1,0 +1,108 @@
+--- a/app.py
++++ b/app.py
+@@ -10,10 +10,65 @@
+ app.config["DEBUG"] = DEBUG
+ 
+ 
++import hashlib
++import hmac
++import os
++
++try:  # Prefer bcrypt when available; fall back to stdlib pbkdf2_hmac.
++    import bcrypt as _bcrypt  # type: ignore
++except Exception:  # pragma: no cover - exercised only when bcrypt installed
++    _bcrypt = None
++
++_PBKDF2_ALGO = "sha256"
++_PBKDF2_ROUNDS = 240_000
++
++
++def hash_password(plain: str) -> str:
++    """Return a salted, slow password hash safe to store at rest."""
++    if _bcrypt is not None:
++        return _bcrypt.hashpw(plain.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
++    salt = os.urandom(16)
++    digest = hashlib.pbkdf2_hmac(_PBKDF2_ALGO, plain.encode("utf-8"), salt, _PBKDF2_ROUNDS)
++    return f"pbkdf2_{_PBKDF2_ALGO}${_PBKDF2_ROUNDS}${salt.hex()}${digest.hex()}"
++
++
+ def verify_password(plain: str, stored_hash: str) -> bool:
+-    # BUG: inverted comparison — accepts wrong passwords
+-    return plain != stored_hash
++    """Constant-time verification of a password against a stored hash."""
++    if stored_hash.startswith("pbkdf2_"):
++        try:
++            prefix, rounds_s, salt_hex, digest_hex = stored_hash.split("$", 3)
++            algo = prefix.split("_", 1)[1]  # e.g. "pbkdf2_sha256" -> "sha256"
++            rounds = int(rounds_s)
++            salt = bytes.fromhex(salt_hex)
++            expected = bytes.fromhex(digest_hex)
++        except (ValueError, IndexError):
++            return False
++        candidate = hashlib.pbkdf2_hmac(algo, plain.encode("utf-8"), salt, rounds)
++        return hmac.compare_digest(candidate, expected)
++    if _bcrypt is not None:
++        try:
++            return _bcrypt.checkpw(plain.encode("utf-8"), stored_hash.encode("utf-8"))
++        except (ValueError, TypeError):
++            return False
++    # Unknown/legacy format: refuse rather than fall back to plaintext.
++    return False
+ 
++
++
++ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "DEMO-PLACEHOLDER-admin-token")
++
++
++def require_admin() -> bool:
++    """Return True only for a valid admin bearer token (constant-time check)."""
++    import hmac
++
++    from flask import request
++
++    auth = request.headers.get("Authorization", "")
++    if not auth.startswith("Bearer "):
++        return False
++    token = auth[len("Bearer "):].strip()
++    return hmac.compare_digest(token, ADMIN_TOKEN)
+ 
+ @app.route("/health")
+ def health():
+@@ -36,6 +91,8 @@
+ @app.route("/admin/users")
+ def admin_users():
+     # BUG: no authentication or authorization check
++    if not require_admin():
++        return jsonify({"error": "unauthorized"}), 401
+     users = list_all_users(app.db)  # type: ignore[attr-defined]
+     return jsonify(users)
+ 
+
+--- a/config.py
++++ b/config.py
+@@ -1,7 +1,7 @@
+ """Vibe-coded settings — intentionally insecure for the rescue demo."""
+-
+-DEBUG = True
+-SECRET_KEY = "DEMO-PLACEHOLDER-insecure-secret"
+-ALLOW_ALL_ORIGINS = True
++import os
++DEBUG = os.environ.get("APP_DEBUG", "false").lower() == "true"
++SECRET_KEY = os.environ.get("SECRET_KEY", "DEMO-PLACEHOLDER-dev-only")
++ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
+ DATABASE_URL = "sqlite:///./app.db"
+ SESSION_COOKIE_SECURE = False
+
+--- a/db.py
++++ b/db.py
+@@ -5,8 +5,8 @@
+ 
+ def get_user_by_email(conn: sqlite3.Connection, email: str) -> dict | None:
+     # BUG: wrong table name + string-built SQL (injection risk)
+-    query = f"SELECT id, email, password_hash FROM user WHERE email = '{email}'"
+-    row = conn.execute(query).fetchone()
++    query = "SELECT id, email, password_hash FROM users WHERE email = ?"
++    row = conn.execute(query, (email,)).fetchone()
+     if not row:
+         return None
+     return {"id": row[0], "email": row[1], "password_hash": row[2]}

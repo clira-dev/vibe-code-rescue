@@ -1,5 +1,11 @@
-# Runtime (optional — only needed for live Claude narrative)
+# The tool itself is stdlib-only at runtime — nothing here is required to run it.
+
+# Optional: real password hashing prefers bcrypt when present (stdlib pbkdf2_hmac
+# is used as a fallback when it is absent).
+# bcrypt>=4.0
+
+# Optional: live Claude executive summary via `--narrative` (offline stub used otherwise).
 anthropic>=0.40
 
-# Testing
+# For running the test suite.
 pytest>=8.0

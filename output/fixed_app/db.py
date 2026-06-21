@@ -1,9 +1,10 @@
-"""Data layer with parameterized queries."""
+"""Tiny data layer with a broken query helper."""
 
 import sqlite3
 
 
 def get_user_by_email(conn: sqlite3.Connection, email: str) -> dict | None:
+    # BUG: wrong table name + string-built SQL (injection risk)
     query = "SELECT id, email, password_hash FROM users WHERE email = ?"
     row = conn.execute(query, (email,)).fetchone()
     if not row:
